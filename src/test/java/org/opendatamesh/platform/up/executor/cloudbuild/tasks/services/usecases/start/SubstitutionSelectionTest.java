@@ -71,6 +71,26 @@ class SubstitutionSelectionTest {
     }
 
     @Test
+    void whenUndeclaredParametersShareAKeyThenBothDroppedNotRefused() {
+        SubstitutionSelection.Selection selection = new SubstitutionSelection()
+                .select(TRIGGER, Map.of("other-key", "a", "other_key", "b", "env", "prd"));
+
+        assertEquals(Map.of("_ENV", "prd"), selection.substitutions());
+        assertEquals(List.of("other-key", "other_key"), selection.dropped());
+    }
+
+    @Test
+    void whenDeclaredValueNullThenInvalid() {
+        Map<String, String> parameters = new java.util.HashMap<>();
+        parameters.put("env", null);
+
+        UseCaseException failure = assertThrows(UseCaseException.class, () -> new SubstitutionSelection().select(TRIGGER, parameters));
+
+        assertEquals(UseCaseException.Reason.INVALID, failure.getReason());
+        assertTrue(failure.getMessage().contains("_ENV"), failure.getMessage());
+    }
+
+    @Test
     void whenUndeclaredValueTooLongThenDroppedNotRefused() {
         SubstitutionSelection.Selection selection = new SubstitutionSelection()
                 .select(TRIGGER, Map.of("notes", "x".repeat(5000)));

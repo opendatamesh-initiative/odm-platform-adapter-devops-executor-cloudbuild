@@ -8,6 +8,8 @@ import org.opendatamesh.platform.up.executor.cloudbuild.clients.google.GoogleApi
 import org.opendatamesh.platform.up.executor.cloudbuild.clients.google.GoogleRequest;
 import org.opendatamesh.platform.up.executor.cloudbuild.config.CloudBuildProperties;
 import org.opendatamesh.platform.up.executor.cloudbuild.exceptions.BadGatewayException;
+import org.opendatamesh.platform.up.executor.cloudbuild.exceptions.BadRequestException;
+import org.opendatamesh.platform.up.executor.cloudbuild.exceptions.NotFoundException;
 import org.opendatamesh.platform.up.executor.cloudbuild.tasks.model.AccessToken;
 import org.opendatamesh.platform.up.executor.cloudbuild.tasks.model.ExecutorIdentity;
 import org.opendatamesh.platform.up.executor.cloudbuild.tasks.model.GcpCredential;
@@ -15,6 +17,7 @@ import org.opendatamesh.platform.up.executor.cloudbuild.tasks.model.ServiceAccou
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Obtains a Google access token for one request. A service-account key is exchanged at the configured OAuth token
@@ -56,7 +59,7 @@ public class GoogleAccessTokenClientImpl implements GoogleAccessTokenClient {
         String assertion = keyReader.signAssertion(parsed, endpoints.oauthToken(), Instant.now());
         GoogleRequest request = new GoogleRequest(OAUTH_API,
                 "exchange the key of service account " + parsed.clientEmail() + " for a token", endpoints.oauthToken());
-        JsonNode response = transport.postForm(request, Map.of("grant_type", JWT_BEARER_GRANT, "assertion", assertion));
+        JsonNode response = asGatewayFailure(() -> transport.postForm(request, Map.of("grant_type", JWT_BEARER_GRANT, "assertion", assertion)));
         return token(response, "access_token", request);
     }
 
@@ -64,7 +67,8 @@ public class GoogleAccessTokenClientImpl implements GoogleAccessTokenClient {
         GoogleRequest request = new GoogleRequest(METADATA_API, "read the executor's token",
                 endpoints.metadata() + METADATA_TOKEN_PATH);
         try {
-            return token(transport.readJsonWithHeaders(request, Map.of("Metadata-Flavor", "Google")), "access_token", request);
+            return token(asGatewayFailure(() -> transport.readJsonWithHeaders(request, Map.of("Metadata-Flavor", "Google"))),
+                    "access_token", request);
         } catch (GoogleApiUnreachableException e) {
             throw new BadGatewayException(e.getMessage() + ": workload-identity mode needs the executor to run on GCP "
                     + "(Cloud Run, or GKE with Workload Identity); outside GCP use service-account-key mode", e);
@@ -79,7 +83,19 @@ public class GoogleAccessTokenClientImpl implements GoogleAccessTokenClient {
         ObjectNode body = transport.objectMapper().createObjectNode();
         body.putArray("scope").add(ServiceAccountKeyReader.CLOUD_PLATFORM_SCOPE);
         body.put("lifetime", IMPERSONATED_TOKEN_LIFETIME);
-        return token(transport.queryJson(request, executorToken, body), "accessToken", request);
+        return token(asGatewayFailure(() -> transport.queryJson(request, executorToken, body)), "accessToken", request);
+    }
+
+    /**
+     * A 400 or 404 from an auth endpoint (revoked key, unknown impersonated account) is a credential or configuration
+     * failure, not a bad task request: it must reach DevOps as 502, never as a 4xx that DevOps reads as "run gone".
+     */
+    private static JsonNode asGatewayFailure(Supplier<JsonNode> call) {
+        try {
+            return call.get();
+        } catch (BadRequestException | NotFoundException e) {
+            throw new BadGatewayException(e.getMessage(), e);
+        }
     }
 
     private static AccessToken token(JsonNode response, String field, GoogleRequest request) {

@@ -58,6 +58,14 @@ class ExecutorCloudBuildConfigValidatorTest {
     }
 
     @Test
+    void whenDomainScopedProjectThenPasses() {
+        Map<String, String> properties = TestConfigs.valid("http://stub:1");
+        properties.put("executor.cloudbuild.project", "example.com:data-prd");
+
+        assertDoesNotThrow(() -> validate(properties));
+    }
+
+    @Test
     void whenEndpointNotAnHttpUrlThenFailsNamingKey() {
         Map<String, String> properties = TestConfigs.valid("http://stub:1");
         properties.put("executor.cloudbuild.endpoints.metadata", "metadata.google.internal");

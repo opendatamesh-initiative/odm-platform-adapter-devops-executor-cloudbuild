@@ -8,6 +8,7 @@ import org.opendatamesh.platform.up.executor.cloudbuild.clients.google.GoogleApi
 import org.opendatamesh.platform.up.executor.cloudbuild.clients.google.GoogleRequest;
 import org.opendatamesh.platform.up.executor.cloudbuild.config.CloudBuildProperties;
 import org.opendatamesh.platform.up.executor.cloudbuild.exceptions.BadGatewayException;
+import org.opendatamesh.platform.up.executor.cloudbuild.exceptions.BadRequestException;
 import org.opendatamesh.platform.up.executor.cloudbuild.exceptions.NotFoundException;
 import org.opendatamesh.platform.up.executor.cloudbuild.tasks.model.Build;
 import org.opendatamesh.platform.up.executor.cloudbuild.tasks.model.CloudBuildAccess;
@@ -57,7 +58,7 @@ public class BuildLogsClientImpl implements BuildLogsClient {
         } catch (GoogleAccessDeniedException e) {
             return new LogUnavailable("Cloud Storage refused to read " + object.uri()
                     + ": grant roles/storage.objectViewer on the bucket (and roles/logging.viewAccessor for a user-owned bucket)");
-        } catch (BadGatewayException | NotFoundException e) {
+        } catch (BadGatewayException | BadRequestException | NotFoundException e) {
             return new LogUnavailable(e.getMessage());
         }
     }
@@ -72,7 +73,7 @@ public class BuildLogsClientImpl implements BuildLogsClient {
         } catch (GoogleAccessDeniedException e) {
             return new LogUnavailable("Cloud Logging refused to list the entries of build " + buildId
                     + ": grant roles/logging.viewer on project " + build.name().project());
-        } catch (BadGatewayException | NotFoundException e) {
+        } catch (BadGatewayException | BadRequestException | NotFoundException e) {
             return new LogUnavailable(e.getMessage());
         }
     }

@@ -20,6 +20,8 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -64,7 +66,11 @@ public class GoogleApiTransport {
     public Optional<JsonNode> readJson(GoogleRequest request, AccessToken token) {
         return withRetries(request, true, () -> {
             try {
-                return Optional.ofNullable(rest.genericGet(request.url(), bearer(token), null, JsonNode.class));
+                JsonNode json = rest.genericGet(request.url(), bearer(token), null, JsonNode.class);
+                if (json == null) {
+                    throw new BadGatewayException(request.api() + " returned an empty response when trying to " + request.action());
+                }
+                return Optional.of(json);
             } catch (ClientException e) {
                 if (e.getCode() == NOT_FOUND) {
                     return Optional.empty();
@@ -155,6 +161,10 @@ public class GoogleApiTransport {
                 }
             } catch (UncheckedIOException e) {
                 if (!retryable || attempt >= http.readRetries()) {
+                    if (isResponseTimeout(e)) {
+                        throw new BadGatewayException(request.api() + " did not answer within "
+                                + http.requestTimeout() + " when trying to " + request.action(), e);
+                    }
                     throw new GoogleApiUnreachableException(request.api() + " is not reachable when trying to "
                             + request.action() + " (" + e.getCause().getClass().getSimpleName() + ")", e);
                 }
@@ -190,7 +200,7 @@ public class GoogleApiTransport {
                 }
                 byte[] bytes = body.readNBytes((int) Math.min(Integer.MAX_VALUE - 8L, maxBytes + 1));
                 boolean truncated = bytes.length > maxBytes;
-                int length = truncated ? (int) maxBytes : bytes.length;
+                int length = truncated ? completeCharacters(bytes, (int) maxBytes) : bytes.length;
                 return new BoundedText(new String(bytes, 0, length, StandardCharsets.UTF_8), truncated);
             }
         } catch (IOException e) {
@@ -199,6 +209,20 @@ public class GoogleApiTransport {
             Thread.currentThread().interrupt();
             throw new InternalException("Interrupted while calling a Google API", e);
         }
+    }
+
+    /** A response timeout means the host answered too slowly; a connect timeout still means it was not reached. */
+    private static boolean isResponseTimeout(UncheckedIOException e) {
+        return e.getCause() instanceof HttpTimeoutException && !(e.getCause() instanceof HttpConnectTimeoutException);
+    }
+
+    /** The cut, moved back so that it never splits a multi-byte UTF-8 character. */
+    private static int completeCharacters(byte[] bytes, int cut) {
+        int length = cut;
+        while (length > 0 && (bytes[length] & 0xC0) == 0x80) {
+            length--;
+        }
+        return length;
     }
 
     private JsonNode readJsonBody(GoogleRequest request, String body) {

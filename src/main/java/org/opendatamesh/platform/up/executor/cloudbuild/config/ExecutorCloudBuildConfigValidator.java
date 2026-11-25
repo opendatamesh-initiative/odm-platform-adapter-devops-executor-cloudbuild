@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 public class ExecutorCloudBuildConfigValidator {
 
     private static final String PREFIX = "executor.cloudbuild.";
-    private static final Pattern PROJECT = Pattern.compile("[a-z][a-z0-9-]{4,28}[a-z0-9]");
+    private static final Pattern PROJECT = Pattern.compile("([a-z0-9][a-z0-9.-]*[a-z0-9]:)?[a-z][a-z0-9-]{4,28}[a-z0-9]");
     private static final Pattern LOCATION = Pattern.compile("[a-z0-9-]+");
     private static final Pattern SECRET_TYPE = Pattern.compile("[a-z0-9]+(-[a-z0-9]+)*");
     private static final String SECRET_HEADER_SEPARATOR = "executor-secret";
@@ -42,7 +42,8 @@ public class ExecutorCloudBuildConfigValidator {
 
     private void validateTarget() {
         require(PROJECT.matcher(properties.project()).matches(), "project",
-                "must be a GCP project id (6 to 30 lowercase letters, digits or hyphens, starting with a letter)");
+                "must be a GCP project id (6 to 30 lowercase letters, digits or hyphens, starting with a letter), "
+                        + "optionally with a domain prefix (example.com:my-project)");
         require(LOCATION.matcher(properties.location()).matches(), "location",
                 "must be global or a Cloud Build region, for example europe-west8");
     }

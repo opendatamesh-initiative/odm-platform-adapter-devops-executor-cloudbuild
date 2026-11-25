@@ -169,7 +169,7 @@ Pipeline parameters reach the build only as substitutions:
 
 - A parameter name becomes `_` + the name in upper case, with every character outside `A-Z`, `0-9` and `_` replaced by `_`: `env` → `_ENV`, `data-set` → `_DATA_SET`. A name that already starts with `_` keeps one.
 - Only keys the trigger declares are sent. The others are dropped, and their names (never their values) go to the executor's log. A declared key with no parameter keeps the trigger's default.
-- Two parameters that become the same key (`env` and `ENV`) are a 400.
+- Two parameters that become the same declared key (`env` and `ENV`) are a 400; parameters the trigger does not declare are dropped even if their keys collide. A null value is a 400.
 - Cloud Build limits apply before any call: at most 200 substitutions, keys up to 100 bytes, values up to 4000 bytes. Anything larger is a 400.
 
 ## Status mapping

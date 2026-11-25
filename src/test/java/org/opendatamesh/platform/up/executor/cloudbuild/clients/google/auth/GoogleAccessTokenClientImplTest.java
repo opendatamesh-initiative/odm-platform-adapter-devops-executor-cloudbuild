@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.opendatamesh.platform.up.executor.cloudbuild.clients.google.GoogleApiTransport;
 import org.opendatamesh.platform.up.executor.cloudbuild.config.CloudBuildProperties;
+import org.opendatamesh.platform.up.executor.cloudbuild.exceptions.BadGatewayException;
 import org.opendatamesh.platform.up.executor.cloudbuild.exceptions.BadRequestException;
 import org.opendatamesh.platform.up.executor.cloudbuild.tasks.model.AccessToken;
 import org.opendatamesh.platform.up.executor.cloudbuild.tasks.model.ServiceAccountKey;
@@ -107,10 +108,22 @@ class GoogleAccessTokenClientImplTest {
     void whenGoogleRefusesTheKeyThenBadGatewayQuotingGoogle() {
         stub.reply("POST", GoogleStub.OAUTH_TOKEN, 400, "{\"error\":\"invalid_grant\",\"error_description\":\"Invalid JWT Signature.\"}");
 
-        Exception failure = assertThrows(Exception.class, () -> client.tokenFor(new ServiceAccountKey(base64(serviceAccountKey()))));
+        BadGatewayException failure = assertThrows(BadGatewayException.class,
+                () -> client.tokenFor(new ServiceAccountKey(base64(serviceAccountKey()))));
 
         assertTrue(failure.getMessage().contains("invalid_grant"), failure.getMessage());
         assertTrue(failure.getMessage().contains(CLIENT_EMAIL), failure.getMessage());
+    }
+
+    @Test
+    void whenImpersonatedServiceAccountUnknownThenBadGatewayNotNotFound() throws Exception {
+        Map<String, String> config = TestConfigs.valid(stub.baseUrl());
+        config.put("executor.cloudbuild.auth.impersonate-service-account", GoogleStub.IMPERSONATED_SA);
+        CloudBuildProperties properties = TestConfigs.cloudBuild(config);
+        GoogleAccessTokenClientImpl identityClient = new GoogleAccessTokenClientImpl(new GoogleApiTransport(properties, new ObjectMapper()), properties);
+        stub.reply("POST", GoogleStub.GENERATE_ACCESS_TOKEN, 404, "{\"error\":{\"code\":404,\"status\":\"NOT_FOUND\",\"message\":\"Not found; Gaia id not found\"}}");
+
+        assertThrows(BadGatewayException.class, () -> identityClient.tokenFor(properties.credentialPolicy().credentialFor(null)));
     }
 
     private String serviceAccountKey() {

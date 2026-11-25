@@ -22,9 +22,9 @@ Runs the Cloud Build trigger a DevOps task names, at the task's branch or tag, a
 `SubstitutionSelection` owns the substitution rules:
 
 - `substitutionKey`: a parameter name becomes `_` plus the name in upper case, every character outside letters, digits and `_` replaced by `_`.
-- `rejectCollisions`: two parameters that become the same key are invalid.
+- `rejectCollisions`: two parameters that become the same declared key are invalid; parameters that would be dropped never block the start.
 - `declaredByTrigger`: only keys the trigger declares are sent; the other parameters are dropped and their names logged. The trigger's default applies to a declared key with no parameter.
-- `checkedKey` and `checkedValue`: a key longer than 100 bytes or a value longer than 4000 bytes is invalid.
+- `checkedKey` and `checkedValue`: a key longer than 100 bytes, a value longer than 4000 bytes, or a null value is invalid.
 - `rejectTooMany`: more than 200 substitutions is invalid.
 
 ## Tests

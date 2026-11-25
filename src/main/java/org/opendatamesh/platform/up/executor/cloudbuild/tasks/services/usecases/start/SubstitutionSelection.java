@@ -27,15 +27,14 @@ final class SubstitutionSelection {
 
     Selection select(Trigger trigger, Map<String, String> parameters) {
         Map<String, List<String>> parametersByKey = groupByKey(parameters);
-        rejectCollisions(parametersByKey);
+        rejectCollisions(trigger, parametersByKey);
         SortedMap<String, String> substitutions = new TreeMap<>();
         List<String> dropped = new ArrayList<>();
         parametersByKey.forEach((key, names) -> {
-            String name = names.get(0);
             if (declaredByTrigger(trigger, key)) {
-                substitutions.put(checkedKey(key), checkedValue(key, parameters.get(name)));
+                substitutions.put(checkedKey(key), checkedValue(key, parameters.get(names.get(0))));
             } else {
-                dropped.add(name);
+                dropped.addAll(names);
             }
         });
         rejectTooMany(substitutions);
@@ -55,9 +54,10 @@ final class SubstitutionSelection {
         return "_" + withoutPrefix.toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9_]", "_");
     }
 
-    private static void rejectCollisions(Map<String, List<String>> parametersByKey) {
+    /** Only keys the trigger declares can collide: parameters that would be dropped anyway never block the start. */
+    private static void rejectCollisions(Trigger trigger, Map<String, List<String>> parametersByKey) {
         parametersByKey.forEach((key, names) -> {
-            if (names.size() > 1) {
+            if (names.size() > 1 && declaredByTrigger(trigger, key)) {
                 throw new UseCaseException(Reason.INVALID, "Pipeline parameters " + String.join(" and ", names)
                         + " all become substitution " + key + ": rename them so that each key is unique");
             }
@@ -77,6 +77,9 @@ final class SubstitutionSelection {
     }
 
     private static String checkedValue(String key, String value) {
+        if (value == null) {
+            throw new UseCaseException(Reason.INVALID, "Substitution " + key + " has no value: pipeline parameters cannot be null");
+        }
         if (bytes(value) > MAX_VALUE_BYTES) {
             throw new UseCaseException(Reason.INVALID, "The value of substitution " + key + " is longer than "
                     + MAX_VALUE_BYTES + " bytes, the Cloud Build limit");
@@ -92,6 +95,6 @@ final class SubstitutionSelection {
     }
 
     private static int bytes(String value) {
-        return value == null ? 0 : value.getBytes(StandardCharsets.UTF_8).length;
+        return value.getBytes(StandardCharsets.UTF_8).length;
     }
 }
