@@ -196,7 +196,7 @@ Commands (records, package of each use case):
 ### Update pom and configuration
 
 1. `pom.xml`: nothing to add (Jackson, `java-jwt`, REST, OpenAPI, JUnit and REST Assured are present).
-2. `src/main/resources/application.yaml`: keep the existing `quarkus.*` keys; add `executor.cloudbuild.project: ${CLOUDBUILD_PROJECT:}`, `location: ${CLOUDBUILD_LOCATION:}`, `auth.mode: ${CLOUDBUILD_AUTH_MODE:}`, `auth.impersonate-service-account: ${CLOUDBUILD_IMPERSONATE_SERVICE_ACCOUNT:}` (empty values are treated as unset by the validator for the optional key). `%test` profile: `quarkus.http.test-port: 0`, `executor.cloudbuild.http.read-retries: 0`.
+2. `src/main/resources/application.yaml`: keep the existing `quarkus.*` keys; add `executor.cloudbuild.project: ${CLOUDBUILD_PROJECT:}`, `location: ${CLOUDBUILD_LOCATION:}`, `auth.mode: ${CLOUDBUILD_AUTH_MODE:}`, `auth.impersonate-service-account: ${CLOUDBUILD_IMPERSONATE_SERVICE_ACCOUNT:}` (empty values are treated as unset by the validator for the optional key). `%test` profile: `quarkus.http.test-port: 0`, `executor.cloudbuild.http.read-retries: 0`, project `demo-project`, location `europe-west8`, `auth.mode: workload-identity`, `auth.impersonate-service-account: builder@demo-project.iam.gserviceaccount.com`.
 
 ### Create Configuration - `config.CloudBuildProperties`
 
@@ -237,14 +237,17 @@ Commands (records, package of each use case):
 
 ### Create Client - `clients.google.GoogleApiTransport` and `GoogleApiError`
 
-1. `GoogleApiTransport` (`@ApplicationScoped`): one `HttpClient` (connect timeout, `Redirect.NEVER`), one `RestUtils` from `RestUtilsFactory.getRestUtils(httpClient, objectMapper)`, the `ObjectMapper`.
-   - `JsonNode getJson(String api, String action, String url, AccessToken token)` → `Optional<JsonNode>` (404 → empty), with read retries.
-   - `JsonNode postJson(String api, String action, String url, AccessToken token, Object body, boolean retryable)`.
-   - `String postForm(String api, String action, String url, Map<String,String> form)` (token exchange, retryable).
-   - `Optional<BoundedText> getText(String api, String action, String url, AccessToken token, long maxBytes)` (404 → empty; reads at most `maxBytes` + 1 to detect truncation).
-   - Retry: on `ClientException` with 429, 500, 502, 503, 504, and on `IOException`, up to `read-retries` times with `retry-backoff`; never when `retryable` is false.
-   - Translation through `GoogleApiError.from(code, body)` → `toException(api, action)`: 400 → `BadRequestException`; 401, 403 → `BadGatewayException("<api> refused the credentials when trying to <action>: <google message>")`; others → `BadGatewayException("<api> failed to <action>: HTTP <code> <google message>")`. Google's message is cut at 300 characters.
-2. `GoogleApiError(int code, String status, String message)` record with `from(int, String body)` (tolerates non-JSON bodies).
+1. `GoogleRequest(String api, String action, String url)`: one call, named for error messages. `BoundedText(String text, boolean truncated)`.
+2. `GoogleApiTransport` (`@ApplicationScoped`): one `HttpClient` (connect timeout, `Redirect.NEVER`), one `RestUtils` from `RestUtilsFactory.getRestUtils(httpClient, objectMapper)`, the `ObjectMapper`.
+   - `Optional<JsonNode> readJson(GoogleRequest, AccessToken)`: GET through `RestUtils`, 404 → empty, retried.
+   - `JsonNode queryJson(GoogleRequest, AccessToken, JsonNode body)`: POST that only reads (`entries:list`, `generateAccessToken`), retried.
+   - `JsonNode writeJson(GoogleRequest, AccessToken, JsonNode body)`: POST that changes something (`:run`, `:cancel`), never retried.
+   - `JsonNode postForm(GoogleRequest, Map<String,String> form)`: form-encoded POST on the `HttpClient` (token exchange), retried.
+   - `JsonNode readJsonWithHeaders(GoogleRequest, Map<String,String> headers)`: GET on the `HttpClient` (metadata server), so an unreachable host is told apart, retried.
+   - `Optional<BoundedText> readText(GoogleRequest, AccessToken, long maxBytes)`: GET on the `HttpClient`, 404 → empty, reads at most `maxBytes` + 1 to detect truncation, retried.
+   - Retry: on `ClientException` with 429, 500, 502, 503, 504, and on `IOException`, up to `read-retries` times with `retry-backoff`. An `IOException` left after the retries → `GoogleApiUnreachableException` (a `BadGatewayException`).
+   - Translation through `GoogleApiError.from(code, body, objectMapper).toException(request)`: 400 → `BadRequestException`; 401, 403 → `GoogleAccessDeniedException` (a `BadGatewayException`) `"<api> refused the credentials when trying to <action> (HTTP <code> <status>: <google message>)"`; 404 → `NotFoundException`; others → `BadGatewayException("<api> failed to <action> (HTTP <code> ...)")`. Google's message is cut at 300 characters.
+3. `GoogleApiError(int code, String status, String message)` record with `from(int, String body, ObjectMapper)`: the Google API error shape, the OAuth error shape, or plain text.
 
 ### Create Client - `clients.google.auth`
 
@@ -275,7 +278,7 @@ Commands (records, package of each use case):
 ### Implement Use Case - `tasks.services.usecases.start`
 
 1. `StartTaskCommand`, `StartTaskPresenter.presentStarted(BuildName)`, `StartTaskFactory.buildStartTask(command, presenter)`.
-2. Ports: `StartTaskAccessOutboundPort` (`CredentialPolicy credentialPolicy()`, `CloudBuildAccess open(GcpCredential)`), `StartTaskCloudBuildOutboundPort` (`findTrigger`, `runTrigger`).
+2. Ports: `StartTaskAccessOutboundPort` (`CredentialPolicy credentialPolicy()`, `CloudBuildAccess open(GcpCredential)`), `StartTaskCloudBuildOutboundPort` (`findTrigger`, `runTrigger`). The status, logs and cancel access ports add `CloudBuildTarget target()`, so the run id is checked before any token is requested.
 3. `StartTask.execute()`: `request()` → `open()` → `findTrigger(access)` → `selectSubstitutions(trigger)` → `run(...)` → log `Started Cloud Build build {} from trigger {}` → `presenter.presentStarted(build)`; `catch (Exception e) → presenter.presentException(e)`.
    - `request()`: blank `pipelineIdentifier` → INVALID `executorParameters.pipelineIdentifier is required: it is the name of the Cloud Build trigger to run`; blank `ref.name` → INVALID; `ref.type` not `BRANCH`/`TAG` (case-insensitive) → INVALID `executorParameters.ref.type must be BRANCH or TAG`.
    - `findTrigger`: empty → NOT_FOUND `No Cloud Build trigger named <name> in project <p>, location <l>`.
@@ -291,9 +294,9 @@ Commands (records, package of each use case):
 
 ### Implement Use Case - `tasks.services.usecases.logs`
 
-1. `ReadTaskLogsCommand`, `ReadTaskLogsPresenter.presentLogs(String content, Instant generatedAt)`, factory (with `logs.max-size`), ports `ReadTaskLogsAccessOutboundPort`, `ReadTaskLogsCloudBuildOutboundPort.findBuild`, `ReadTaskLogsBuildLogsOutboundPort` (`read(CloudBuildAccess, Build, LogDestination)`).
+1. `ReadTaskLogsCommand`, `ReadTaskLogsPresenter.presentLogs(String content, Instant generatedAt)`, factory (with `logs.max-size`), ports `ReadTaskLogsAccessOutboundPort`, `ReadTaskLogsCloudBuildOutboundPort.findBuild`, `ReadTaskLogsBuildLogsOutboundPort` (`read(CloudBuildAccess, Build, LogDestination)`, `long maxLogBytes()`).
 2. `execute()`: `buildName()` → `open()` → `findBuild` → `logsOf(access, build)` → `presenter.presentLogs(content, now)`.
-   - `logsOf`: for each destination in `build.logDestinations()`, the first `LogContent` wins (append `\n… log truncated at <max-size> …` when truncated); none → a note `No log available for build <id> (<raw status>): <reason 1>; <reason 2>`; empty destinations → `Build <id> stores no logs (options.logging = NONE)` or `no logs bucket` for `GCS_ONLY` without bucket.
+   - `logsOf`: for each destination in `build.logDestinations()`, the first `LogContent` wins (append `\n… log truncated at <maxLogBytes> bytes …\n` when truncated); none → a note `No log available for build <id> (<raw status>): <reason 1>; <reason 2>`; empty destinations → `Build <id> stores no logs (options.logging = NONE)` or `no logs bucket` for `GCS_ONLY` without bucket.
 
 ### Implement Use Case - `tasks.services.usecases.cancel`
 
@@ -473,11 +476,11 @@ Feature: Validate the configuration at start-up
 | Substitutions / same key refused | `SubstitutionSelectionTest` | `whenTwoParametersShareAKeyThenInvalid` |
 | Substitutions / value too long refused | `SubstitutionSelectionTest` | `whenValueTooLongThenInvalid` |
 | Authenticate / workload identity with impersonation | `StartTaskIT` | `whenWorkloadIdentityThenCloudBuildCalledWithImpersonatedToken` |
-| Authenticate / key exchanged for a token | `ServiceAccountKeyModeIT` | `whenKeyHeaderThenSignedJwtExchangedAndTokenUsed` |
-| Authenticate / key mode without header | `ServiceAccountKeyModeIT` | `whenKeyHeaderMissingThen400NamingHeader` |
-| Authenticate / malformed key | `ServiceAccountKeyModeIT` | `whenKeyMalformedThen400WithoutEchoingIt` |
+| Authenticate / key exchanged for a token | `GoogleAccessTokenClientImplTest` | `whenKeyHeaderThenSignedJwtExchangedAtConfiguredEndpoint` |
+| Authenticate / key mode without header | `CredentialPolicyTest` | `whenKeyModeWithoutHeaderThenInvalidNamingHeader` |
+| Authenticate / malformed key | `GoogleAccessTokenClientImplTest` | `whenKeyMalformedThenBadRequestWithoutEchoingIt` |
 | Authenticate / Google refuses the credential | `StartTaskIT` | `whenCloudBuildDeniesPermissionThen502WithGoogleMessage` |
-| Status / statuses map | `CloudBuildStatusTest` | `whenCloudBuildStatusThenMapsToRunStatus` |
+| Status / statuses map | `CloudBuildStatusTest` (and end to end in `ReadTaskStatusIT.whenBuildStatusThenReportedInDevOpsVocabulary`) | `whenCloudBuildStatusThenMapsToRunStatus` |
 | Status / unknown build | `ReadTaskStatusIT` | `whenBuildUnknownThen404` |
 | Status / another project | `ReadTaskStatusIT` | `whenRunIdInAnotherProjectThen400WithoutCallingCloudBuild` |
 | Status / malformed run id | `ReadTaskStatusIT` | `whenRunIdMalformedThen400` |
@@ -492,7 +495,7 @@ Feature: Validate the configuration at start-up
 | Config / invalid key secret type | `ExecutorCloudBuildConfigValidatorTest` | `whenKeySecretTypeInvalidThenFailsNamingKey` |
 | Config / impersonation in key mode | `ExecutorCloudBuildConfigValidatorTest` | `whenImpersonationInKeyModeThenFailsNamingKey` |
 
-Test support: `GoogleStub` (JDK `HttpServer`, scripted replies by method and path, records requests with headers) and `GoogleStubResource` (`QuarkusTestResourceLifecycleManager`, shared by every `*IT`: workload-identity mode with impersonation, all endpoints on the stub). `ServiceAccountKeyModeIT` uses one `@TestProfile` (key mode); it is the only restart. Each test method's Javadoc copies its scenario.
+Test support: `GoogleStub` (JDK `HttpServer`, scripted replies by method and path, records requests with headers), `GoogleStubResource` (`QuarkusTestResourceLifecycleManager`, shared by every `*IT`, points all endpoints at the stub; the `%test` profile sets workload-identity mode with impersonation), `Fixtures`, `ExecutorApi` and `TestConfigs` (typed configuration without the application). The auth mode is fixed at start-up, so service-account-key mode is tested on `GoogleAccessTokenClientImpl` against its own `GoogleStub` without the application (no `@TestProfile`, no restart), and its header rule on `CredentialPolicy`. Each test method's Javadoc copies its scenario.
 
 ## Norms
 

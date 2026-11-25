@@ -17,3 +17,23 @@ quarkus:
   swagger-ui:
     always-include: true
     path: /swagger-ui
+executor:
+  cloudbuild:
+    project: ${CLOUDBUILD_PROJECT:}                       # required: GCP project of the triggers
+    location: ${CLOUDBUILD_LOCATION:}                     # required: global, or the triggers' region
+    auth:
+      mode: ${CLOUDBUILD_AUTH_MODE:}                      # required: workload-identity | service-account-key
+      impersonate-service-account: ${CLOUDBUILD_IMPERSONATE_SERVICE_ACCOUNT:}   # workload-identity only, optional
+"%test":
+  quarkus:
+    http:
+      test-port: 0
+  executor:
+    cloudbuild:
+      http:
+        read-retries: 0
+      project: demo-project
+      location: europe-west8
+      auth:
+        mode: workload-identity
+        impersonate-service-account: builder@demo-project.iam.gserviceaccount.com
