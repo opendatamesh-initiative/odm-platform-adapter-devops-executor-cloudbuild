@@ -1,6 +1,6 @@
-# SPDD Norms — executor-starter
+# SPDD Norms — executor-cloudbuild
 
-This folder holds the **engineering norms** that executor-starter inherits from its backend service template. They describe *how* to implement features in this codebase, not *what* to build (that lives in `spdd/prompt/` and `spdd/analysis/`).
+This folder holds the **engineering norms** that executor-cloudbuild inherits from its backend service template. They describe *how* to implement features in this codebase, not *what* to build (that lives in `spdd/prompt/` and `spdd/analysis/`).
 
 ## Ownership
 
@@ -30,7 +30,7 @@ Agents and developers running **SPDD** (Structured Prompt-Driven Development) co
 - Generating or syncing implementation code from a prompt
 - Reviewing whether new code matches existing patterns
 
-Treat this directory as the **canonical reference** for executor-starter conventions referenced by prompts. Prefer linking to a norm file here over duplicating long explanations inside every prompt.
+Treat this directory as the **canonical reference** for executor-cloudbuild conventions referenced by prompts. Prefer linking to a norm file here over duplicating long explanations inside every prompt.
 
 ## Architectural principles
 
@@ -60,6 +60,7 @@ If a module's norm file is missing, that module is not part of this service: ski
 | Work that runs in the background (async calls, fan-out, heavy computation) | [`ASYNC_EXECUTION.md`](./ASYNC_EXECUTION.md) |
 | New or changed configuration | [`CONFIGURATION.md`](./CONFIGURATION.md) |
 | New or changed public endpoint, or a new API version | [`API_DESIGN.md`](./API_DESIGN.md) |
+| A new or touched module with several units of one kind, or a unit whose steps outgrow one class (use cases of an aggregate, a job, a client, a parser) | [`PROGRESSIVE_DISCOVERY.md`](./PROGRESSIVE_DISCOVERY.md) |
 
 ## Norm index
 
@@ -74,3 +75,4 @@ If a module's norm file is missing, that module is not part of this service: ski
 | [ASYNC_EXECUTION.md](./ASYNC_EXECUTION.md) | core | `AsyncExecutorService` (virtual threads, I/O) vs `PlatformThreadExecutorService` (platform threads, CPU or pinning), concurrency caps, executor configuration |
 | [CONFIGURATION.md](./CONFIGURATION.md) | core | Typed, validated-at-startup configuration; behaviour selected by configuration; safe defaults |
 | [API_DESIGN.md](./API_DESIGN.md) | core | Versioning, version adapters, breaking changes, OpenAPI contract, uniform responses |
+| [PROGRESSIVE_DISCOVERY.md](./PROGRESSIVE_DISCOVERY.md) | core | Navigation levels of a module (index README → unit README → entry method → step class → rules → ports/adapters), one skeleton per kind of unit, earned sharing, structure test and README guard |

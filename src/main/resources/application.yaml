@@ -1,23 +1,39 @@
 quarkus:
+  application:
+    name: odm-platform-adapter-devops-executor-cloudbuild
   http:
     port: 9080
-  datasource:
-    active: false
-    devservices:
-      enabled: false
-  hibernate-orm:
-    active: false
   log:
     category:
-      "org.executor":
-        level: DEBUG
-
+      "org.opendatamesh.platform.up.executor.cloudbuild":
+        level: INFO
+  smallrye-openapi:
+    path: /api-docs
+    info-title: ODM Platform Adapter DevOps Executor Cloud Build API
+    info-description: DevOps executor that runs data product pipelines on Google Cloud Build
+    info-version: v1.0.0
+    info-license-name: Apache 2.0
+    info-license-url: http://www.apache.org/licenses/LICENSE-2.0.html
+  swagger-ui:
+    always-include: true
+    path: /swagger-ui
 executor:
-  simulation:
-    run-duration: 5s
-    outcome: SUCCEEDED
-
+  cloudbuild:
+    project: ${CLOUDBUILD_PROJECT:}                       # required: GCP project of the triggers
+    location: ${CLOUDBUILD_LOCATION:}                     # required: global, or the triggers' region
+    auth:
+      mode: ${CLOUDBUILD_AUTH_MODE:}                      # required: workload-identity | service-account-key
+      impersonate-service-account: ${CLOUDBUILD_IMPERSONATE_SERVICE_ACCOUNT:}   # workload-identity only, optional
 "%test":
+  quarkus:
+    http:
+      test-port: 0
   executor:
-    simulation:
-      run-duration: 200ms
+    cloudbuild:
+      http:
+        read-retries: 0
+      project: demo-project
+      location: europe-west8
+      auth:
+        mode: workload-identity
+        impersonate-service-account: builder@demo-project.iam.gserviceaccount.com
