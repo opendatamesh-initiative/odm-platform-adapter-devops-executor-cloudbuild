@@ -1,11 +1,11 @@
-name: odm-platform-adapter-devops-executor-starter CI
+name: odm-platform-adapter-devops-executor-cloudbuild CI
 on:
   push:
     branches:
-      - 'master'
+      - 'main'
   pull_request:
     branches:
-      - 'master'
+      - 'main'
 jobs:
   build:
     runs-on: ubuntu-latest
