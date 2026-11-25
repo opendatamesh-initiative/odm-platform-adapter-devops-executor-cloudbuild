@@ -6,7 +6,7 @@
 
     <groupId>org.opendatamesh</groupId>
     <artifactId>odm-platform-adapter-devops-executor-cloudbuild</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>executor-cloudbuild</name>
     <description>DevOps executor that runs data product pipelines on Google Cloud Build</description>
 
